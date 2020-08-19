@@ -1,24 +1,38 @@
 package com.example.demo.service;
 
+import com.example.demo.domain.Numbers;
 import com.example.demo.error.RecordNotFoundException;
+import com.example.demo.repo.NumbersRepository;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import java.util.stream.LongStream;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.when;
 
+@ExtendWith(MockitoExtension.class)
 class DemoServiceTest {
+    @InjectMocks
     private DemoService service;
+    @Mock
+    private NumbersRepository numbersRepository;
 
     @BeforeEach
     void setUp() {
-        service = new DemoService();
+        service = new DemoService(numbersRepository);
     }
 
     /**
@@ -28,8 +42,15 @@ class DemoServiceTest {
      */
     @Test
     void store_Success() {
-        assertEquals(1, service.store(Collections.emptyList()));
-        assertEquals(2, service.store(Collections.singletonList(19L)));
+        ArgumentCaptor<Numbers> numbersArgumentCaptor = ArgumentCaptor.forClass(Numbers.class);
+        when(numbersRepository.save(numbersArgumentCaptor.capture())).thenAnswer(iom -> {
+            Numbers entity = (Numbers) iom.getArguments()[0];
+            entity.setId(123L);
+            return entity;
+        });
+
+        assertEquals(123, service.store(Collections.singletonList(19L)));
+        assertArrayEquals(Collections.singletonList(19L).toArray(), numbersArgumentCaptor.getValue().getNumbers().toArray());
     }
 
     /**
@@ -40,9 +61,11 @@ class DemoServiceTest {
     @Test
     void permutation_Success() {
         List<Long> numbers = LongStream.of(1, 2, 3, 4, 5).boxed().collect(Collectors.toList());
-        long id = service.store(numbers);
 
-        List<Long> permutation = service.permutation(id);
+        when(numbersRepository.findById(123L)).thenReturn(Optional.of(Numbers.builder().numbers(numbers).build()));
+
+        List<Long> permutation = service.permutation(123L);
+
         Assertions.assertAll("should return different values than original numbers",
                 () -> assertEquals(5, permutation.size()),
                 () -> assertTrue(permutation.contains(1L)),
@@ -60,6 +83,8 @@ class DemoServiceTest {
      */
     @Test
     void permutation_InvalidId() {
+        when(numbersRepository.findById(-1L)).thenReturn(Optional.ofNullable(null));
+
         Assertions.assertThrows(RecordNotFoundException.class, () -> service.permutation(-1));
     }
 }

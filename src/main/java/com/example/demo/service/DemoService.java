@@ -1,55 +1,56 @@
 package com.example.demo.service;
 
+import com.example.demo.domain.Numbers;
 import com.example.demo.error.RecordNotFoundException;
+import com.example.demo.repo.NumbersRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
+import java.util.Optional;
 
 /**
  * Business logic for storing and returning a permutation of a list of numbers
  */
 @Service
+// wraps all calls to both store() and permutation() methods in a db transaction:
+@Transactional
 public class DemoService {
-    private List<List<Long>> db = new ArrayList<>();
-    // lock is used to support concurrent HTTP requests:
-    private ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final NumbersRepository numbersRepository;
+
+    public DemoService(NumbersRepository numbersRepository) {
+        this.numbersRepository = numbersRepository;
+    }
 
     /**
-     * Stores a list of numbers in the in-memory <code>db</code> list
+     * Stores a list of numbers in the H2 db
      * @param numbers list of longs
-     * @return id of stored list, where id is the size of <code>db</code> after the add
+     * @return id of Numbers entity storing the list of numbers
      */
     public long store(List<Long> numbers) {
-        lock.writeLock().lock();
-        try {
-            db.add(numbers);
-            return db.size();
-        } finally {
-            lock.writeLock().unlock();
-        }
+        Numbers result = numbersRepository.save(Numbers.builder()
+                .numbers(numbers)
+                .build());
+        return result.getId();
     }
 
     /**
      *
-     * @param id <code>id - 1</code> is the index of list of numbers in <code>db</code>
+     * @param id id of Numbers entity that stores the list of numbers
      * @return Random permutation of a list of numbers stored previously by calling <code>store()</code> method
      */
+    // marks transaction as read-only for performance reasons:
+    @Transactional(readOnly = true)
     public List<Long> permutation(long id) {
-        lock.readLock().lock();
-        try {
-            if (id > db.size() || id < 0) {
-                throw new RecordNotFoundException("Id not found: " + id);
-            }
-
-            List<Long> numbers = new ArrayList<>(db.get((int) id - 1));
-            Collections.shuffle(numbers);
-            return numbers;
-        } finally {
-            lock.readLock().unlock();
+        Optional<Numbers> maybeNumbers = numbersRepository.findById(id);
+        if (!maybeNumbers.isPresent()) {
+            throw new RecordNotFoundException("Id not found: " + id);
         }
+
+        List<Long> numbers = new ArrayList<>(maybeNumbers.get().getNumbers());
+        Collections.shuffle(numbers);
+        return numbers;
     }
 }
